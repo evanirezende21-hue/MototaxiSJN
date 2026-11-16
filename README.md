@@ -1,2 +1,0 @@
-# MototaxiSJN
-APP mototaxi
