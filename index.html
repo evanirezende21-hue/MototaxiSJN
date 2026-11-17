@@ -1107,6 +1107,11 @@
         return;
       }
 
+      const btnRequest = document.getElementById('btn-request');
+      if (btnRequest.disabled) return;
+      btnRequest.disabled = true;
+      btnRequest.innerText = "Enviando...";
+
       const rideData = {
         passageiroNome: currentUser ? currentUser.name : 'Passageiro',
         passageiroTel: currentUser ? currentUser.phone : '',
@@ -1127,6 +1132,7 @@
         document.getElementById('cancel-dest-container').style.display = 'none';
         document.getElementById('instruction-text').style.display = 'none';
         document.getElementById('ride-details').style.display = 'none';
+        btnRequest.innerText = "Chamar Mototáxi";
         
         const statusBox = document.getElementById('status-box');
         statusBox.style.display = 'block';
@@ -1135,6 +1141,8 @@
         escutarStatusCorridaPassageiro(activeRideId);
       }).catch((error) => {
         console.error("Erro ao solicitar corrida:", error);
+        btnRequest.disabled = false;
+        btnRequest.innerText = "Chamar Mototáxi";
         alert("Erro ao enviar a solicitação. Tente novamente.");
       });
     }
