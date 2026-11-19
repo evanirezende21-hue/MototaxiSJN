@@ -8,6 +8,8 @@ on:
 jobs:
   build:
     runs-on: ubuntu-latest
+    env:
+      CI: "true"
     steps:
       - name: Baixar código do repositório
         uses: actions/checkout@v4
@@ -17,23 +19,30 @@ jobs:
         with:
           node-version: 20
 
-      - name: Configurar Java 17
+      - name: Configurar Java 21
         uses: actions/setup-java@v4
         with:
           distribution: 'temurin'
-          java-version: '17'
+          java-version: '21'
+
+      - name: Garantir pasta www
+        run: |
+          mkdir -p www
+          if [ ! -f www/index.html ] && [ -f index.html ]; then
+            cp index.html www/index.html
+          fi
 
       - name: Inicializar Capacitor e Android
         run: |
           npm init -y
           npm install @capacitor/core @capacitor/cli @capacitor/android
-          npx cap init "AppSJN" "com.sjn.app" --web-dir=www
+          npx cap init "MototaxiSJN" "com.sjn.mototaxi" --web-dir=www --npm-client=npm
           npx cap add android
 
       - name: Adicionar Permissões de GPS e Microfone
         run: |
           MANIFEST="android/app/src/main/AndroidManifest.xml"
-          sed -i 's/<uses-permission android:name="android.permission.INTERNET" \/>/<uses-permission android:name="android.permission.INTERNET" \/>\n    <uses-permission android:name="android.permission.ACCESS_FINE_LOCATION" \/>\n    <uses-permission android:name="android.permission.ACCESS_COARSE_LOCATION" \/>\n    <uses-permission android:name="android.permission.RECORD_AUDIO" \/>/' $MANIFEST
+          sed -i 's/<uses-permission android:name="android.permission.INTERNET" \/>/<uses-permission android:name="android.permission.INTERNET" \/>\n    <uses-permission android:name="android.permission.ACCESS_FINE_LOCATION" \/>\n    <uses-permission android:name="android.permission.ACCESS_COARSE_LOCATION" \/>\n    <uses-permission android:name="android.permission.RECORD_AUDIO" \/>/' "$MANIFEST"
 
       - name: Compilar APK Debug
         run: |
