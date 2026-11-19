@@ -36,7 +36,13 @@ jobs:
         run: |
           npm init -y
           npm install @capacitor/core @capacitor/cli @capacitor/android
-          npx cap init "MototaxiSJN" "com.sjn.mototaxi" --web-dir=www --npm-client=npm
+          cat << 'EOF' > capacitor.config.json
+          {
+            "appId": "com.sjn.mototaxi",
+            "appName": "MototaxiSJN",
+            "webDir": "www"
+          }
+          EOF
           npx cap add android
 
       - name: Adicionar Permissões de GPS e Microfone
