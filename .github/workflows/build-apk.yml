@@ -35,7 +35,7 @@ jobs:
       - name: Inicializar Capacitor e Android
         run: |
           npm init -y
-          npm install @capacitor/core @capacitor/cli @capacitor/android
+          npm install @capacitor/core@6 @capacitor/cli@6 @capacitor/android@6
           cat << 'EOF' > capacitor.config.json
           {
             "appId": "com.sjn.mototaxi",
@@ -44,6 +44,7 @@ jobs:
           }
           EOF
           npx cap add android
+          npx cap sync android
 
       - name: Adicionar Permissões de GPS e Microfone
         run: |
@@ -54,7 +55,7 @@ jobs:
         run: |
           cd android
           chmod +x gradlew
-          ./gradlew assembleDebug
+          ./gradlew assembleDebug --no-daemon
 
       - name: Disponibilizar APK para Download
         uses: actions/upload-artifact@v4
