@@ -107,6 +107,32 @@
     .btn-search { background: #ffc107; color: black; border: none; padding: 0 14px; border-radius: 10px; font-weight: bold; cursor: pointer; }
     @keyframes pulse { 0% { transform: scale(1); } 50% { transform: scale(1.08); } 100% { transform: scale(1); } }
 
+    .driver-select-box {
+      margin-bottom: 10px;
+      background: #f8f9fa;
+      padding: 8px 10px;
+      border-radius: 10px;
+      border: 1px solid #e0e0e0;
+    }
+    .driver-select-box label {
+      display: block;
+      font-size: 12px;
+      font-weight: bold;
+      color: #333;
+      margin-bottom: 4px;
+    }
+    .driver-select-box select {
+      width: 100%;
+      padding: 8px 10px;
+      border-radius: 8px;
+      border: 1px solid #ccc;
+      background: #fff;
+      color: #111;
+      font-size: 13px;
+      font-weight: 500;
+      outline: none;
+    }
+
     .btn-cancel-dest {
       background: #f5f5f5;
       color: #c62828;
@@ -165,6 +191,10 @@
       padding: 12px;
       margin-bottom: 10px;
       box-shadow: 0 2px 4px rgba(0,0,0,0.05);
+    }
+    .ride-item-card.exclusive-target {
+      background: #fff8e1;
+      border: 2px solid #ffc107;
     }
   </style>
 </head>
@@ -251,10 +281,17 @@
         <button class="btn-cancel-dest" onclick="cancelarDestino()">❌ Limpar / Refazer Destino</button>
       </div>
 
-      <div class="info-text" id="instruction-text">👉 Ou toque no mapa para marcar o destino.</div>
+      <div class="info-text" id="instruction-text">👉 Ou toque no mapa para marcar o destino (toque num piloto para escolher).</div>
       <div id="status-box" style="display: none; font-size: 15px; font-weight: bold; color: #d35400; margin-bottom: 10px;"></div>
       
       <div id="ride-details" style="display: none;">
+        <div class="driver-select-box">
+          <label for="preferred-driver-select">🏍️ Mototaxista (toque no mapa ou escolha abaixo):</label>
+          <select id="preferred-driver-select" onchange="onSelectPreferredDriver(this.value)">
+            <option value="">Qualquer mototaxista disponível</option>
+          </select>
+        </div>
+
         <div style="display: flex; justify-content: space-between; align-items: center;">
           <div>
             <div class="info-text" id="distance-text">Distância: 0.0 km</div>
@@ -431,6 +468,11 @@
     let passengerMarkersOnDriverMap = {};
     let pendingRideRoutesGroup = null;
 
+    // Controle de bloqueios e seleção de motorista online pelo passageiro
+    let driversRegistryCache = {};
+    let latestDriversLocCache = {};
+    let selectedDriverPlate = "";
+
     let origem = [-21.5431, -43.0108]; 
     let driverPos = [-21.5431, -43.0108]; 
     let destino = null;
@@ -469,6 +511,17 @@
       const brng = Math.atan2(y, x) * 180 / Math.PI;
 
       return (brng + 360) % 360;
+    }
+
+    function calcularDistanciaKmSimples(p1, p2) {
+      const R = 6371;
+      const dLat = (p2[0] - p1[0]) * Math.PI / 180;
+      const dLon = (p2[1] - p1[1]) * Math.PI / 180;
+      const a = Math.sin(dLat / 2) * Math.sin(dLat / 2) +
+                Math.cos(p1[0] * Math.PI / 180) * Math.cos(p2[0] * Math.PI / 180) *
+                Math.sin(dLon / 2) * Math.sin(dLon / 2);
+      const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
+      return R * c;
     }
 
     async function sairDaConta() {
@@ -877,6 +930,9 @@
       const acao = bloquear ? 'bloquear/suspender' : 'liberar';
       if (confirm(`Tem certeza que deseja ${acao} este mototaxista?`)) {
         db.ref('mototaxisjn_motoristas/' + keyPlate).update({ bloqueado: bloquear });
+        if (bloquear) {
+          db.ref('mototaxisjn_motoristas_loc/' + keyPlate).remove();
+        }
       }
     }
 
@@ -1007,44 +1063,131 @@
       escutarMotoristasNoMapaPassageiro();
     }
 
-    function escutarMotoristasNoMapaPassageiro() {
-      db.ref('mototaxisjn_motoristas_loc').on('value', (snapshot) => {
-        const drivers = snapshot.val() || {};
-        const now = Date.now();
+    function onSelectPreferredDriver(placa) {
+      selectedDriverPlate = placa || "";
+      renderizarMotoristasOnlinePassageiro();
+      atualizarTextoBotaoChamar();
+    }
 
-        Object.keys(driverMarkersOnPassengerMap).forEach(key => {
-          if (!drivers[key]) {
+    function atualizarTextoBotaoChamar() {
+      const btnRequest = document.getElementById('btn-request');
+      if (!btnRequest || btnRequest.disabled) return;
+      if (selectedDriverPlate) {
+        btnRequest.innerText = `Chamar (${selectedDriverPlate})`;
+      } else {
+        btnRequest.innerText = "Chamar Mototáxi";
+      }
+    }
+
+    function escutarMotoristasNoMapaPassageiro() {
+      // Escuta o cadastro oficial para ocultar qualquer motorista bloqueado
+      db.ref('mototaxisjn_motoristas').on('value', (snap) => {
+        driversRegistryCache = snap.val() || {};
+        renderizarMotoristasOnlinePassageiro();
+      });
+
+      db.ref('mototaxisjn_motoristas_loc').on('value', (snapshot) => {
+        latestDriversLocCache = snapshot.val() || {};
+        renderizarMotoristasOnlinePassageiro();
+      });
+    }
+
+    function renderizarMotoristasOnlinePassageiro() {
+      if (!passengerMap) return;
+      const drivers = latestDriversLocCache || {};
+      const now = Date.now();
+      const selectEl = document.getElementById('preferred-driver-select');
+      const activePlatesMap = {};
+
+      Object.keys(drivers).forEach(key => {
+        const d = drivers[key];
+        const reg = driversRegistryCache[key];
+
+        // Se estiver bloqueado no cadastro ou com flag bloqueado, ignora completamente
+        const estaBloqueado = (reg && reg.bloqueado === true) || d.bloqueado === true;
+        const estaOnline = (now - (d.timestamp || 0)) < 180000;
+
+        if (!estaBloqueado && estaOnline && d.lat && d.lng) {
+          const iconeEscolhido = d.iconeVeiculo || 'moto';
+          const iconeDinamico = getDriverIcon(iconeEscolhido);
+          const nomeMotorista = d.nome || 'Mototaxista';
+          const placaVeiculo = d.placa || key.replace(/_/g, ' ');
+          const isSelected = selectedDriverPlate === placaVeiculo;
+          const labelTooltip = isSelected
+            ? `⭐ ${nomeMotorista} (${placaVeiculo}) [SELECIONADO]`
+            : `${nomeMotorista} (${placaVeiculo})`;
+
+          activePlatesMap[placaVeiculo] = {
+            nome: nomeMotorista,
+            placa: placaVeiculo,
+            distKm: calcularDistanciaKmSimples(origem, [d.lat, d.lng])
+          };
+
+          if (driverMarkersOnPassengerMap[key]) {
+            driverMarkersOnPassengerMap[key].setLatLng([d.lat, d.lng]);
+            driverMarkersOnPassengerMap[key].setIcon(iconeDinamico);
+            driverMarkersOnPassengerMap[key].setTooltipContent(labelTooltip);
+          } else {
+            const marker = L.marker([d.lat, d.lng], { icon: iconeDinamico }).addTo(passengerMap);
+            marker.bindTooltip(labelTooltip, { permanent: true, direction: 'top', className: 'map-name-tooltip', offset: [0, -15] }).openTooltip();
+            
+            // Permite tocar diretamente no marcador do mototaxista no mapa para selecioná-lo
+            marker.on('click', (ev) => {
+              L.DomEvent.stopPropagation(ev);
+              if (selectedDriverPlate === placaVeiculo) {
+                selectedDriverPlate = "";
+              } else {
+                selectedDriverPlate = placaVeiculo;
+              }
+              if (selectEl) selectEl.value = selectedDriverPlate;
+              atualizarTextoBotaoChamar();
+              renderizarMotoristasOnlinePassageiro();
+              const infoEl = document.getElementById('instruction-text');
+              if (infoEl && !destino) {
+                infoEl.innerText = selectedDriverPlate
+                  ? `⭐ Mototaxista ${nomeMotorista} (${placaVeiculo}) selecionado! Agora marque o destino.`
+                  : `👉 Ou toque no mapa para marcar o destino (toque num piloto para escolher).`;
+              }
+            });
+
+            driverMarkersOnPassengerMap[key] = marker;
+          }
+        } else {
+          if (driverMarkersOnPassengerMap[key]) {
             passengerMap.removeLayer(driverMarkersOnPassengerMap[key]);
             delete driverMarkersOnPassengerMap[key];
           }
-        });
-
-        Object.keys(drivers).forEach(key => {
-          const d = drivers[key];
-          if (now - (d.timestamp || 0) < 180000) {
-            const iconeEscolhido = d.iconeVeiculo || 'moto';
-            const iconeDinamico = getDriverIcon(iconeEscolhido);
-            const nomeMotorista = d.nome || 'Mototaxista';
-            const placaVeiculo = d.placa || key.replace(/_/g, ' ');
-            const labelTooltip = `${nomeMotorista} (${placaVeiculo})`;
-
-            if (driverMarkersOnPassengerMap[key]) {
-              driverMarkersOnPassengerMap[key].setLatLng([d.lat, d.lng]);
-              driverMarkersOnPassengerMap[key].setIcon(iconeDinamico);
-              driverMarkersOnPassengerMap[key].setTooltipContent(labelTooltip);
-            } else {
-              const marker = L.marker([d.lat, d.lng], { icon: iconeDinamico }).addTo(passengerMap);
-              marker.bindTooltip(labelTooltip, { permanent: true, direction: 'top', className: 'map-name-tooltip', offset: [0, -15] }).openTooltip();
-              driverMarkersOnPassengerMap[key] = marker;
-            }
-          } else {
-            if (driverMarkersOnPassengerMap[key]) {
-              passengerMap.removeLayer(driverMarkersOnPassengerMap[key]);
-              delete driverMarkersOnPassengerMap[key];
-            }
-          }
-        });
+        }
       });
+
+      // Remove marcadores de chaves que saíram do nó de localização
+      Object.keys(driverMarkersOnPassengerMap).forEach(key => {
+        const d = drivers[key];
+        const reg = driversRegistryCache[key];
+        const estaBloqueado = (reg && reg.bloqueado === true) || (d && d.bloqueado === true);
+        if (!d || estaBloqueado) {
+          passengerMap.removeLayer(driverMarkersOnPassengerMap[key]);
+          delete driverMarkersOnPassengerMap[key];
+        }
+      });
+
+      // Atualiza o dropdown de escolha de mototaxista online
+      if (selectEl) {
+        if (selectedDriverPlate && !activePlatesMap[selectedDriverPlate]) {
+          selectedDriverPlate = "";
+          atualizarTextoBotaoChamar();
+        }
+
+        const listaOrdenada = Object.values(activePlatesMap).sort((a, b) => a.distKm - b.distKm);
+        selectEl.innerHTML = `<option value="">Qualquer mototaxista disponível (${listaOrdenada.length} online)</option>`;
+        listaOrdenada.forEach(item => {
+          const opt = document.createElement('option');
+          opt.value = item.placa;
+          opt.textContent = `${item.nome} (${item.placa}) • ~${item.distKm.toFixed(1)} km`;
+          if (item.placa === selectedDriverPlate) opt.selected = true;
+          selectEl.appendChild(opt);
+        });
+      }
     }
 
     function onPassengerMapClick(e) {
@@ -1085,6 +1228,7 @@
           document.getElementById('distance-text').innerText = `Distância: ${distanciaKm.toFixed(1)} km`;
           document.getElementById('price-text').innerText = `R$ ${valorEstimado},00`;
           document.getElementById('ride-details').style.display = 'block';
+          atualizarTextoBotaoChamar();
 
           if (pRouteLine) {
             passengerMap.removeLayer(pRouteLine);
@@ -1116,6 +1260,7 @@
       document.getElementById('distance-text').innerText = `Distância: ${distanciaKm.toFixed(1)} km`;
       document.getElementById('price-text').innerText = `R$ ${valorEstimado},00`;
       document.getElementById('ride-details').style.display = 'block';
+      atualizarTextoBotaoChamar();
 
       if (pRouteLine) {
         passengerMap.removeLayer(pRouteLine);
@@ -1135,6 +1280,8 @@
       btnRequest.disabled = true;
       btnRequest.innerText = "Enviando...";
 
+      const placaEscolhida = selectedDriverPlate || document.getElementById('preferred-driver-select').value || null;
+
       const rideData = {
         passageiroNome: currentUser ? currentUser.name : 'Passageiro',
         passageiroTel: currentUser ? currentUser.phone : '',
@@ -1144,6 +1291,7 @@
         destinoLng: destino[1],
         valor: valorEstimado,
         distancia: distanciaKm,
+        motoristaAlvoPlaca: placaEscolhida,
         status: 'pendente',
         timestamp: Date.now()
       };
@@ -1155,17 +1303,18 @@
         document.getElementById('cancel-dest-container').style.display = 'none';
         document.getElementById('instruction-text').style.display = 'none';
         document.getElementById('ride-details').style.display = 'none';
-        btnRequest.innerText = "Chamar Mototáxi";
         
         const statusBox = document.getElementById('status-box');
         statusBox.style.display = 'block';
-        statusBox.innerText = "⏳ Procurando mototaxista próximo...";
+        statusBox.innerText = placaEscolhida
+          ? `⏳ Chamando mototaxista (${placaEscolhida})...`
+          : "⏳ Procurando mototaxista próximo...";
 
         escutarStatusCorridaPassageiro(activeRideId);
       }).catch((error) => {
         console.error("Erro ao solicitar corrida:", error);
         btnRequest.disabled = false;
-        btnRequest.innerText = "Chamar Mototáxi";
+        atualizarTextoBotaoChamar();
         alert("Erro ao enviar a solicitação. Tente novamente.");
       });
     }
@@ -1265,13 +1414,17 @@
           setTimeout(() => {
             if (pDestMarker) { passengerMap.removeLayer(pDestMarker); pDestMarker = null; }
             destino = null;
+            selectedDriverPlate = "";
 
             document.getElementById('status-box').style.display = 'none';
             document.getElementById('passenger-search-box').style.display = 'flex';
             document.getElementById('cancel-dest-container').style.display = 'none';
             document.getElementById('instruction-text').style.display = 'block';
+            document.getElementById('instruction-text').innerText = '👉 Ou toque no mapa para marcar o destino (toque num piloto para escolher).';
             document.getElementById('destination-input').value = '';
             document.getElementById('btn-request').disabled = false;
+            atualizarTextoBotaoChamar();
+            renderizarMotoristasOnlinePassageiro();
           }, 4000);
         }
       });
@@ -1401,17 +1554,21 @@
             const plateKey = currentUser.plate.replace(/\s+/g, '_');
             const locRef = db.ref('mototaxisjn_motoristas_loc/' + plateKey);
 
-            locRef.onDisconnect().remove();
-
-            locRef.set({
-              lat: lat,
-              lng: lng,
-              nome: currentUser.name,
-              placa: currentUser.plate,
-              iconeVeiculo: currentUser.iconStyle,
-              heading: bearingCalculado,
-              timestamp: Date.now()
-            });
+            if (isDriverBlocked) {
+              // Se estiver bloqueado, remove do mapa público dos passageiros
+              locRef.remove();
+            } else {
+              locRef.onDisconnect().remove();
+              locRef.set({
+                lat: lat,
+                lng: lng,
+                nome: currentUser.name,
+                placa: currentUser.plate,
+                iconeVeiculo: currentUser.iconStyle,
+                heading: bearingCalculado,
+                timestamp: Date.now()
+              });
+            }
           }
 
           if (pendingRide) {
@@ -1487,6 +1644,9 @@
         const blockedCard = document.getElementById('driver-blocked-card');
 
         if (isDriverBlocked) {
+          // Garante que saia do mapa dos passageiros imediatamente ao ser bloqueado
+          db.ref('mototaxisjn_motoristas_loc/' + plateKey).remove();
+
           emptyBox.style.display = 'none';
           reqContainer.style.display = 'none';
           pickupCard.style.display = 'none';
@@ -1532,7 +1692,10 @@
       Object.keys(rides).forEach(id => {
         const r = rides[id];
         if (r.status === 'pendente') {
-          pendingRidesList.push({ id, ...r });
+          // Se o passageiro escolheu um motorista específico, mostra apenas para aquele motorista
+          if (!r.motoristaAlvoPlaca || r.motoristaAlvoPlaca === currentUser.plate) {
+            pendingRidesList.push({ id, ...r });
+          }
         }
         if ((r.status === 'aceita' || r.status === 'em_andamento') && r.motoristaPlaca === currentUser.plate) {
           activeForMe = { id, ...r };
@@ -1588,6 +1751,7 @@
           for (const ride of pendingRidesList) {
             const valFormatado = Math.round(ride.valor || 0);
             const distStr = ride.distancia ? `${ride.distancia.toFixed(1)} km` : '';
+            const isDirecionada = ride.motoristaAlvoPlaca === currentUser.plate;
 
             L.marker([ride.origemLat, ride.origemLng], { icon: greenIcon }).addTo(pendingRideRoutesGroup)
               .bindTooltip(`Origem: ${ride.passageiroNome}`, { direction: 'top', className: 'map-name-tooltip' });
@@ -1608,8 +1772,9 @@
             }
 
             const item = document.createElement('div');
-            item.className = 'ride-item-card';
+            item.className = isDirecionada ? 'ride-item-card exclusive-target' : 'ride-item-card';
             item.innerHTML = `
+              ${isDirecionada ? '<div style="font-size: 11px; font-weight: bold; color: #e65100; margin-bottom: 4px;">⭐ CHAMADA DIRETA PARA VOCÊ</div>' : ''}
               <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 6px;">
                 <strong>${ride.passageiroNome}</strong>
                 <span class="price-tag" style="font-size: 20px;">R$ ${valFormatado},00</span>
@@ -1687,6 +1852,10 @@
         const ride = snap.val();
         if (!ride || ride.status !== 'pendente') {
           alert("Esta corrida já foi aceita por outro mototaxista.");
+          return;
+        }
+        if (ride.motoristaAlvoPlaca && ride.motoristaAlvoPlaca !== currentUser.plate) {
+          alert("Esta corrida foi solicitada diretamente para outro mototaxista.");
           return;
         }
 
