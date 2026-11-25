@@ -217,7 +217,7 @@
           ENTRAR COM O GOOGLE
         </button>
 
-        <div style="color: #666; font-size: 12px; margin-bottom: 16px;">— OU USE O CADASTRO MANUAL —</div>
+        <div id="manual-divider" style="color: #666; font-size: 12px; margin-bottom: 16px;">— OU USE O CADASTRO MANUAL —</div>
       </div>
 
       <div id="form-container">
@@ -247,9 +247,8 @@
           </select>
         </div>
 
-        <div class="form-group" id="group-admin-pass" style="display: none;">
-          <label>Senha de Administrador</label>
-          <input type="password" id="admin-password" placeholder="Digite a senha admin" />
+        <div class="form-group" id="group-admin-pass" style="display: none; text-align: center; color: #ffc107; font-size: 13px;">
+          Clique em <b>ENTRAR COM O GOOGLE</b> acima com a conta autorizada de administrador.
         </div>
 
         <button class="btn-primary" id="btn-login" onclick="entrarNoAppManual()">ENTRAR NO APP</button>
@@ -355,13 +354,13 @@
     <header style="background: #111; color: #ffc107;">
       <div>
         <span>MototaxiSJN Administrador</span>
-        <div class="user-badge" style="color: #aaa;">Gestão de Tarifas, Senha e Bloqueios</div>
+        <div class="user-badge" style="color: #aaa;">Gestão de Tarifas e Bloqueios</div>
       </div>
       <button onclick="sairDaConta()">Sair</button>
     </header>
 
     <div class="admin-card" style="margin-bottom: 20px; background: #222; border: 1px solid #ffc107;">
-      <h3 style="color: #ffc107; font-size: 16px; margin-bottom: 12px;">⚙️ Configurações de Tarifas e Segurança</h3>
+      <h3 style="color: #ffc107; font-size: 16px; margin-bottom: 12px;">⚙️ Configurações de Tarifas</h3>
       
       <div style="display: flex; gap: 10px; flex-wrap: wrap;">
         <div class="form-group" style="flex: 1; min-width: 130px; margin-bottom: 8px;">
@@ -373,11 +372,6 @@
           <label>Preço por KM (R$)</label>
           <input type="number" step="0.01" id="cfg-km-price" placeholder="Ex: 2.50" />
         </div>
-      </div>
-
-      <div class="form-group" style="margin-bottom: 12px;">
-        <label>Nova Senha de Administrador</label>
-        <input type="text" id="cfg-admin-pass" placeholder="Digite apenas se quiser alterar a senha" />
       </div>
 
       <button class="btn-primary" onclick="salvarConfiguracoesAdmin()" style="margin-top: 0; padding: 10px;">💾 SALVAR CONFIGURAÇÕES</button>
@@ -418,9 +412,11 @@
 
     auth.setPersistence(firebase.auth.Auth.Persistence.LOCAL);
 
-    let ADMIN_PASSWORD_CORRETA = "Rinaverinave32@";
-    let TAXA_MINIMA = 6.68;
-    let PRECO_POR_KM = 2.50;
+    // SUBSTITUA PELO SEU USER UID DO FIREBASE AUTHENTICATION
+    const ADMIN_UID = "miUwxvFlFIOSgocw1cqTi0eD2B73";
+
+    let TAXA_MINIMA = 7.00;
+    let PRECO_POR_KM = 0.00;
 
     db.ref('mototaxisjn_configuracoes').on('value', (snapshot) => {
       const cfg = snapshot.val();
@@ -432,9 +428,6 @@
         if (cfg.precoPorKm !== undefined) {
           PRECO_POR_KM = parseFloat(cfg.precoPorKm);
           document.getElementById('cfg-km-price').value = PRECO_POR_KM;
-        }
-        if (cfg.senhaAdmin !== undefined && cfg.senhaAdmin !== "") {
-          ADMIN_PASSWORD_CORRETA = cfg.senhaAdmin;
         }
       }
     });
@@ -468,7 +461,6 @@
     let passengerMarkersOnDriverMap = {};
     let pendingRideRoutesGroup = null;
 
-    // Controle de bloqueios e seleção de motorista online pelo passageiro
     let driversRegistryCache = {};
     let latestDriversLocCache = {};
     let selectedDriverPlate = "";
@@ -684,10 +676,11 @@
       document.getElementById('group-plate').style.display = newRole === 'motorista' ? 'block' : 'none';
       document.getElementById('group-icon-style').style.display = newRole === 'motorista' ? 'block' : 'none';
       document.getElementById('group-admin-pass').style.display = newRole === 'admin' ? 'block' : 'none';
-      document.getElementById('google-btn-container').style.display = newRole === 'admin' ? 'none' : 'block';
+      document.getElementById('google-btn-container').style.display = 'block';
+      document.getElementById('manual-divider').style.display = newRole === 'admin' ? 'none' : 'block';
+      document.getElementById('btn-login').style.display = newRole === 'admin' ? 'none' : 'flex';
     }
 
-    // BLOQUEIO AUTOMÁTICO PARA NOVOS MOTOTAXISTAS NO PRIMEIRO CADASTRO
     async function garantirRegistroInicialBloqueado(nome, placa) {
       const plateKey = placa.replace(/\s+/g, '_');
       const driverRef = db.ref('mototaxisjn_motoristas/' + plateKey);
@@ -705,7 +698,15 @@
     auth.onAuthStateChanged(async (user) => {
       if (user) {
         const savedRole = localStorage.getItem('mototaxisjn_role') || currentRole || 'passageiro';
-        if (savedRole === 'admin') return;
+        if (savedRole === 'admin') {
+          if (user.uid === ADMIN_UID) {
+            entrarPainelAdmin();
+          } else {
+            alert('Esta conta Google não tem permissão de Administrador.');
+            await auth.signOut();
+          }
+          return;
+        }
 
         let savedName = localStorage.getItem('mototaxisjn_name') || user.displayName || 'Usuário';
         let savedPhone = localStorage.getItem('mototaxisjn_phone') || user.phoneNumber || user.email || 'Google User';
@@ -755,6 +756,16 @@
         const result = await auth.signInWithPopup(provider);
         const user = result.user;
 
+        if (currentRole === 'admin') {
+          if (user.uid === ADMIN_UID) {
+            entrarPainelAdmin();
+          } else {
+            alert('Esta conta Google não tem permissão de Administrador.');
+            await auth.signOut();
+          }
+          return;
+        }
+
         if (currentRole === 'motorista') {
           const userRef = db.ref('mototaxisjn_usuarios/' + user.uid);
           const snap = await userRef.once('value');
@@ -797,17 +808,7 @@
 
     async function entrarNoAppManual() {
       if (currentRole === 'admin') {
-        const pass = document.getElementById('admin-password').value.trim();
-        if (pass === ADMIN_PASSWORD_CORRETA) {
-          try {
-            await auth.signInAnonymously();
-            entrarPainelAdmin();
-          } catch (e) {
-            entrarPainelAdmin();
-          }
-        } else {
-          alert('Senha de Administrador incorreta!');
-        }
+        alert('Use o botão ENTRAR COM O GOOGLE acima para acessar o painel administrativo.');
         return;
       }
 
@@ -855,25 +856,20 @@
     function salvarConfiguracoesAdmin() {
       const minInput = document.getElementById('cfg-min-price').value.trim();
       const kmInput = document.getElementById('cfg-km-price').value.trim();
-      const passInput = document.getElementById('cfg-admin-pass').value.trim();
 
       db.ref('mototaxisjn_configuracoes').once('value').then(snapshot => {
-        const atual = snapshot.val() || { senhaAdmin: ADMIN_PASSWORD_CORRETA };
+        const atual = snapshot.val() || {};
         
         const updates = {
           taxaMinima: minInput !== "" ? parseFloat(minInput) : (atual.taxaMinima || 6.68),
-          precoPorKm: kmInput !== "" ? parseFloat(kmInput) : (atual.precoPorKm || 2.50),
-          senhaAdmin: passInput !== "" ? passInput : atual.senhaAdmin
+          precoPorKm: kmInput !== "" ? parseFloat(kmInput) : (atual.precoPorKm || 2.50)
         };
 
         db.ref('mototaxisjn_configuracoes').set(updates).then(() => {
           alert("Configurações atualizadas com sucesso!");
-          if (passInput !== "") {
-            document.getElementById('cfg-admin-pass').value = '';
-          }
         }).catch(err => {
           console.error("Erro de permissão:", err);
-          alert("Erro: Permissão negada pelo banco de dados. Verifique a senha ou as regras do Firebase.");
+          alert("Erro: Permissão negada pelo banco de dados. Verifique se você entrou com a conta Google autorizada.");
         });
       });
     }
@@ -1080,7 +1076,6 @@
     }
 
     function escutarMotoristasNoMapaPassageiro() {
-      // Escuta o cadastro oficial para ocultar qualquer motorista bloqueado
       db.ref('mototaxisjn_motoristas').on('value', (snap) => {
         driversRegistryCache = snap.val() || {};
         renderizarMotoristasOnlinePassageiro();
@@ -1103,7 +1098,6 @@
         const d = drivers[key];
         const reg = driversRegistryCache[key];
 
-        // Se estiver bloqueado no cadastro ou com flag bloqueado, ignora completamente
         const estaBloqueado = (reg && reg.bloqueado === true) || d.bloqueado === true;
         const estaOnline = (now - (d.timestamp || 0)) < 180000;
 
@@ -1131,7 +1125,6 @@
             const marker = L.marker([d.lat, d.lng], { icon: iconeDinamico }).addTo(passengerMap);
             marker.bindTooltip(labelTooltip, { permanent: true, direction: 'top', className: 'map-name-tooltip', offset: [0, -15] }).openTooltip();
             
-            // Permite tocar diretamente no marcador do mototaxista no mapa para selecioná-lo
             marker.on('click', (ev) => {
               L.DomEvent.stopPropagation(ev);
               if (selectedDriverPlate === placaVeiculo) {
@@ -1160,7 +1153,6 @@
         }
       });
 
-      // Remove marcadores de chaves que saíram do nó de localização
       Object.keys(driverMarkersOnPassengerMap).forEach(key => {
         const d = drivers[key];
         const reg = driversRegistryCache[key];
@@ -1171,7 +1163,6 @@
         }
       });
 
-      // Atualiza o dropdown de escolha de mototaxista online
       if (selectEl) {
         if (selectedDriverPlate && !activePlatesMap[selectedDriverPlate]) {
           selectedDriverPlate = "";
@@ -1555,7 +1546,6 @@
             const locRef = db.ref('mototaxisjn_motoristas_loc/' + plateKey);
 
             if (isDriverBlocked) {
-              // Se estiver bloqueado, remove do mapa público dos passageiros
               locRef.remove();
             } else {
               locRef.onDisconnect().remove();
@@ -1644,7 +1634,6 @@
         const blockedCard = document.getElementById('driver-blocked-card');
 
         if (isDriverBlocked) {
-          // Garante que saia do mapa dos passageiros imediatamente ao ser bloqueado
           db.ref('mototaxisjn_motoristas_loc/' + plateKey).remove();
 
           emptyBox.style.display = 'none';
@@ -1692,7 +1681,6 @@
       Object.keys(rides).forEach(id => {
         const r = rides[id];
         if (r.status === 'pendente') {
-          // Se o passageiro escolheu um motorista específico, mostra apenas para aquele motorista
           if (!r.motoristaAlvoPlaca || r.motoristaAlvoPlaca === currentUser.plate) {
             pendingRidesList.push({ id, ...r });
           }
