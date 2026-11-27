@@ -3,7 +3,7 @@
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover" />
-  <title>MototaxiSJN</title>
+  <title>Moto Táxi SJN</title>
 
   <!-- TAG PWA -->
   <link rel="manifest" href="manifest.json">
@@ -203,7 +203,7 @@
   <!-- LOGIN / CADASTRO (100% GOOGLE) -->
   <div id="auth-screen" class="screen active">
     <div class="auth-card">
-      <h2 style="color: #ffc107; margin-bottom: 16px;">MototaxiSJN</h2>
+      <h2 style="color: #ffc107; margin-bottom: 16px;">Moto Táxi SJN</h2>
       
       <div class="auth-tabs">
         <button class="tab-btn active" id="tab-passenger" onclick="setRole('passageiro')">Passageiro</button>
@@ -249,7 +249,7 @@
   <div id="passenger-screen" class="screen">
     <header style="background: rgba(255,193,7,0.95); color: #000;">
       <div>
-        <span>MototaxiSJN Passageiro</span>
+        <span>Moto Táxi SJN Passageiro</span>
         <div class="user-badge" id="passenger-badge" style="background: rgba(0,0,0,0.15); color: #000;">Nome</div>
       </div>
       <button onclick="sairDaConta()" style="background: #000; color: #ffc107;">Sair / Trocar Perfil</button>
@@ -269,7 +269,7 @@
         <button class="btn-cancel-dest" onclick="cancelarDestino()">❌ Limpar / Refazer Destino</button>
       </div>
 
-      <div class="info-text" id="instruction-text">👉 Ou toque no mapa para marcar o destino (toque num piloto para escolher).</div>
+      <div class="info-text" id="instruction-text">👉 Ou toque no mapa para marcar o destino (toque num mototaxista para escolher).</div>
       <div id="status-box" style="display: none; font-size: 15px; font-weight: bold; color: #d35400; margin-bottom: 10px;"></div>
       
       <div id="ride-details" style="display: none;">
@@ -285,7 +285,7 @@
             <div class="info-text" id="distance-text">Distância: 0.0 km</div>
             <div class="price-tag" id="price-text">R$ 0,00</div>
           </div>
-          <button class="btn-primary" id="btn-request" onclick="solicitarCorrida()" style="width: auto; padding: 12px 20px;">Chamar Mototáxi</button>
+          <button class="btn-primary" id="btn-request" onclick="solicitarCorrida()" style="width: auto; padding: 12px 20px;">Chamar Moto Táxi</button>
         </div>
       </div>
     </div>
@@ -295,7 +295,7 @@
   <div id="driver-screen" class="screen">
     <header>
       <div>
-        <span>MototaxiSJN Piloto</span>
+        <span>Moto Táxi SJN</span>
         <div class="user-badge" id="driver-badge">Nome (Placa)</div>
         <div id="driver-taxas-badge" style="font-size: 11px; color: #ff5252; margin-top: 2px; font-weight: bold;">Taxas devidas: R$ 0,00</div>
       </div>
@@ -342,7 +342,7 @@
   <div id="admin-screen" class="screen">
     <header style="background: #111; color: #ffc107;">
       <div>
-        <span>MototaxiSJN Administrador</span>
+        <span>Moto Táxi SJN Administrador</span>
         <div class="user-badge" style="color: #aaa;">Gestão de Tarifas e Bloqueios</div>
       </div>
       <button onclick="sairDaConta()">Sair</button>
@@ -367,7 +367,7 @@
     </div>
 
     <div style="margin-bottom: 16px;">
-      <h3 style="color: #ffc107; font-size: 18px; margin-bottom: 4px;">MototaxiSJN Pilotos Cadastrados</h3>
+      <h3 style="color: #ffc107; font-size: 18px; margin-bottom: 4px;">Mototaxistas Cadastrados</h3>
       <p style="color: #aaa; font-size: 13px;">Gerencie o saldo de taxas e permissões dos mototaxistas.</p>
     </div>
 
@@ -988,10 +988,10 @@
           rotateControl: false
         }).setView(origem, 16);
         
-        passengerSatLayer = L.tileLayer('https://{s}.google.com/vt/lyrs=s&x={x}&y={y}&z={z}', {
+        passengerSatLayer = L.tileLayer('https://{s}.google.com/vt/lyrs=y&x={x}&y={y}&z={z}', {
           maxZoom: 20,
           subdomains: ['mt0', 'mt1', 'mt2', 'mt3'],
-          attribution: '&copy; Google Satellite'
+          attribution: '&copy; Google Hybrid'
         });
 
         passengerStreetLayer = L.tileLayer('https://{s}.google.com/vt/lyrs=m&x={x}&y={y}&z={z}', {
@@ -1063,7 +1063,7 @@
       if (selectedDriverPlate) {
         btnRequest.innerText = `Chamar (${selectedDriverPlate})`;
       } else {
-        btnRequest.innerText = "Chamar Mototáxi";
+        btnRequest.innerText = "Chamar Moto Táxi";
       }
     }
 
@@ -1131,7 +1131,7 @@
               if (infoEl && !destino) {
                 infoEl.innerText = selectedDriverPlate
                   ? `⭐ Mototaxista ${nomeMotorista} (${placaVeiculo}) selecionado! Agora marque o destino.`
-                  : `👉 Ou toque no mapa para marcar o destino (toque num piloto para escolher).`;
+                  : `👉 Ou toque no mapa para marcar o destino (toque num mototaxista para escolher).`;
               }
             });
 
@@ -1195,7 +1195,7 @@
 
       try {
         const url = `https://router.project-osrm.org/route/v1/driving/${origem[1]},${origem[0]};${destino[1]},${destino[0]}?overview=full&geometries=geojson`;
-        const res = await fetch(url, { headers: { 'User-Agent': 'MototaxiSJN-App' } });
+        const res = await fetch(url, { headers: { 'User-Agent': 'MotoTaxiSJN-App' } });
         const data = await res.json();
 
         if (data.routes && data.routes.length > 0) {
@@ -1318,7 +1318,7 @@
           statusBox.style.display = 'block';
           statusBox.innerHTML = `
             🏍️ <b style="color: #d35400;">Mototaxista a caminho!</b><br>
-            <b>Piloto:</b> ${ride.motoristaNome}<br>
+            <b>Mototaxista:</b> ${ride.motoristaNome}<br>
             <b>Placa:</b> ${ride.motoristaPlaca}<br>
             <div style="font-size: 18px; color: #2e7d32; margin-top: 6px;"><b>Valor da Corrida: R$ ${valorFormatado},00</b></div>
           `;
@@ -1370,7 +1370,7 @@
           statusBox.style.display = 'block';
           statusBox.innerHTML = `
             ✅ <b style="color: #27ae60;">Viagem em andamento</b><br>
-            <b>Piloto:</b> ${ride.motoristaNome} (${ride.motoristaPlaca})<br>
+            <b>Mototaxista:</b> ${ride.motoristaNome} (${ride.motoristaPlaca})<br>
             <div style="font-size: 18px; color: #2e7d32; margin-top: 6px;"><b>Valor da Corrida: R$ ${valorFormatado},00</b></div>
           `;
         } else if (ride.status === 'concluida') {
@@ -1391,7 +1391,7 @@
           statusBox.innerHTML = `
             🎉 <b style="color: #27ae60;">Corrida Concluída!</b><br>
             <b>Valor Pago: R$ ${valorFormatado},00</b><br>
-            Obrigado por viajar com a MototaxiSJN.
+            Obrigado por viajar com o Moto Táxi SJN.
           `;
           
           setTimeout(() => {
@@ -1403,7 +1403,7 @@
             document.getElementById('passenger-search-box').style.display = 'flex';
             document.getElementById('cancel-dest-container').style.display = 'none';
             document.getElementById('instruction-text').style.display = 'block';
-            document.getElementById('instruction-text').innerText = '👉 Ou toque no mapa para marcar o destino (toque num piloto para escolher).';
+            document.getElementById('instruction-text').innerText = '👉 Ou toque no mapa para marcar o destino (toque num mototaxista para escolher).';
             document.getElementById('destination-input').value = '';
             document.getElementById('btn-request').disabled = false;
             atualizarTextoBotaoChamar();
@@ -1476,10 +1476,10 @@
           bearing: 0
         }).setView(driverPos, 17);
         
-        driverSatLayer = L.tileLayer('https://{s}.google.com/vt/lyrs=s&x={x}&y={y}&z={z}', {
+        driverSatLayer = L.tileLayer('https://{s}.google.com/vt/lyrs=y&x={x}&y={y}&z={z}', {
           maxZoom: 20,
           subdomains: ['mt0', 'mt1', 'mt2', 'mt3'],
-          attribution: '&copy; Google Satellite'
+          attribution: '&copy; Google Hybrid'
         });
 
         driverStreetLayer = L.tileLayer('https://{s}.google.com/vt/lyrs=m&x={x}&y={y}&z={z}', {
