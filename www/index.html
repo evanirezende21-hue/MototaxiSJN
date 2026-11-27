@@ -200,7 +200,7 @@
 </head>
 <body>
 
-  <!-- LOGIN / CADASTRO (SOMENTE GOOGLE) -->
+  <!-- LOGIN / CADASTRO (100% GOOGLE) -->
   <div id="auth-screen" class="screen active">
     <div class="auth-card">
       <h2 style="color: #ffc107; margin-bottom: 16px;">MototaxiSJN</h2>
@@ -213,7 +213,7 @@
 
       <div id="form-container">
         <div class="form-group" id="group-phone">
-          <label>Seu WhatsApp / Telemóvel (para contato na corrida)</label>
+          <label>Telemóvel / WhatsApp (para contato do mototaxista)</label>
           <input type="tel" id="user-phone" placeholder="Ex: (32) 99999-9999" />
         </div>
 
@@ -234,7 +234,7 @@
         </div>
 
         <div class="form-group" id="group-admin-pass" style="display: none; text-align: center; color: #ffc107; font-size: 13px;">
-          Entre abaixo com a conta Google autorizada de administrador.
+          Entre com a conta Google autorizada de administrador.
         </div>
 
         <button class="btn-google" onclick="entrarComGoogle()">
@@ -441,6 +441,7 @@
     let dRouteLayerGroup = null;
     let driverFirstCenter = false;
     let previousDriverPos = null;
+    let currentDriverBearing = 0;
 
     let passengerSatLayer, passengerStreetLayer, passengerIsSat = true;
     let driverSatLayer, driverStreetLayer, driverIsSat = true;
@@ -491,6 +492,24 @@
       const brng = Math.atan2(y, x) * 180 / Math.PI;
 
       return (brng + 360) % 360;
+    }
+
+    function calcularCentroCameraAdiante(pos, bearingDeg, distanciaMetros = 120) {
+      const R = 6378137;
+      const brng = bearingDeg * Math.PI / 180;
+      const lat1 = pos[0] * Math.PI / 180;
+      const lon1 = pos[1] * Math.PI / 180;
+
+      const lat2 = Math.asin(
+        Math.sin(lat1) * Math.cos(distanciaMetros / R) +
+        Math.cos(lat1) * Math.sin(distanciaMetros / R) * Math.cos(brng)
+      );
+      const lon2 = lon1 + Math.atan2(
+        Math.sin(brng) * Math.sin(distanciaMetros / R) * Math.cos(lat1),
+        Math.cos(distanciaMetros / R) - Math.sin(lat1) * Math.sin(lat2)
+      );
+
+      return [lat2 * 180 / Math.PI, lon2 * 180 / Math.PI];
     }
 
     function calcularDistanciaKmSimples(p1, p2) {
@@ -726,6 +745,9 @@
         }
 
         currentRole = savedRole;
+        if (currentRole === 'passageiro' && !savedPhone) {
+          return;
+        }
         if (currentRole === 'motorista' && !savedPlate) {
           return;
         }
@@ -734,13 +756,13 @@
           await garantirRegistroInicialBloqueado(savedName, savedPlate);
         }
 
-        entrarNoAppComDados(savedName, savedPhone || user.email, savedPlate, savedIconStyle);
+        entrarNoAppComDados(savedName, savedPhone, savedPlate, savedIconStyle);
       }
     });
 
     async function entrarComGoogle() {
-      let plateInput = document.getElementById('user-plate').value.trim();
       let phoneInput = document.getElementById('user-phone').value.trim();
+      let plateInput = document.getElementById('user-plate').value.trim();
       let iconInput = document.getElementById('user-icon-choice').value;
       localStorage.setItem('mototaxisjn_role', currentRole);
 
@@ -764,20 +786,21 @@
         const userData = snap.val() || {};
 
         if (currentRole === 'passageiro') {
-          const telFinal = phoneInput || userData.telefone || user.phoneNumber || '';
+          const telFinal = phoneInput || userData.telefone || localStorage.getItem('mototaxisjn_phone') || '';
           if (!telFinal) {
-            alert('Por favor, informe seu número de WhatsApp / Telemóvel acima antes de entrar.');
-            await auth.signOut();
+            alert('Passageiro: Por favor, digite seu Telemóvel / WhatsApp antes de entrar.');
             return;
           }
-          localStorage.setItem('mototaxisjn_phone', telFinal);
-          localStorage.setItem('mototaxisjn_name', user.displayName || 'Passageiro');
           await userRef.update({
             nome: user.displayName || 'Passageiro',
             email: user.email,
             telefone: telFinal,
             role: 'passageiro'
           });
+          localStorage.setItem('mototaxisjn_name', user.displayName || 'Passageiro');
+          localStorage.setItem('mototaxisjn_phone', telFinal);
+          entrarNoAppComDados(user.displayName || 'Passageiro', telFinal, '', 'moto');
+          return;
         }
 
         if (currentRole === 'motorista') {
@@ -797,13 +820,13 @@
             await garantirRegistroInicialBloqueado(nomeFinal, plateInput);
           } else {
             alert('Mototaxista: Por favor, digite a Placa da sua moto para concluir o cadastro.');
-            await auth.signOut();
             return;
           }
 
+          localStorage.setItem('mototaxisjn_name', user.displayName || 'Mototaxista');
           localStorage.setItem('mototaxisjn_plate', plateInput);
           localStorage.setItem('mototaxisjn_icon_style', iconInput);
-          localStorage.setItem('mototaxisjn_name', user.displayName || 'Mototaxista');
+          entrarNoAppComDados(user.displayName || 'Mototaxista', '', plateInput, iconInput);
         }
 
       } catch (error) {
@@ -1482,30 +1505,37 @@
           const lat = position.coords.latitude;
           const lng = position.coords.longitude;
           const heading = position.coords.heading;
-          driverPos = [lat, lng];
-          
-          let bearingCalculado = 0;
+          const speed = position.coords.speed;
+          const novaPos = [lat, lng];
 
-          if (heading !== null && !isNaN(heading) && heading !== undefined) {
-            bearingCalculado = heading;
-          } else if (previousDriverPos) {
-            const dist = L.latLng(driverPos).distanceTo(L.latLng(previousDriverPos));
-            if (dist > 1) {
-              bearingCalculado = calcularAnguloMovimento(previousDriverPos, driverPos);
+          const distMetros = previousDriverPos ? L.latLng(novaPos).distanceTo(L.latLng(previousDriverPos)) : 0;
+          const emMovimento = (speed !== null && !isNaN(speed)) ? speed > 1.4 : distMetros > 4;
+
+          if (emMovimento) {
+            if (heading !== null && !isNaN(heading) && heading !== undefined) {
+              currentDriverBearing = heading;
+            } else if (previousDriverPos && distMetros > 4) {
+              currentDriverBearing = calcularAnguloMovimento(previousDriverPos, novaPos);
             }
+            previousDriverPos = novaPos;
+          } else if (!previousDriverPos) {
+            previousDriverPos = novaPos;
           }
 
+          driverPos = novaPos;
+
+          const mapBearing = (360 - currentDriverBearing) % 360;
           if (driverMap && typeof driverMap.setBearing === 'function') {
-            driverMap.setBearing(bearingCalculado);
+            driverMap.setBearing(mapBearing);
           }
 
-          previousDriverPos = driverPos;
+          const centroCamera = calcularCentroCameraAdiante(driverPos, currentDriverBearing, 120);
 
           if (!driverFirstCenter) {
-            driverMap.setView(driverPos, 17);
+            driverMap.setView(centroCamera, 17);
             driverFirstCenter = true;
           } else {
-            driverMap.panTo(driverPos);
+            driverMap.panTo(centroCamera, { animate: true, duration: 0.85, easeLinearity: 0.5 });
           }
 
           dSelfMarker.setLatLng(driverPos);
@@ -1524,7 +1554,7 @@
                 nome: currentUser.name,
                 placa: currentUser.plate,
                 iconeVeiculo: currentUser.iconStyle,
-                heading: bearingCalculado,
+                heading: currentDriverBearing,
                 timestamp: Date.now()
               });
             }
